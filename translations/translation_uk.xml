@@ -16,12 +16,12 @@
 		<text name="fillType_bull_waterbuffalo" text="Водяний буйвол"/>
 
 		<!-- СВИНІ -->
-		<text name="fillType_boar" text="Кабан"/>
-		<text name="fillType_boar_landrace" text="Кабан породи Ландрас"/>
-		<text name="fillType_boar_black_pied" text="Чорно-рябий кабан"/>
-		<text name="fillType_boar_berkshire" text="Кабан породи Беркшир"/>
-		<text name="animal_descriptionBoarReproduction" text="Кабани, які здорові та старші за 8 місяців, можуть розмножуватись."/>
-		<text name="animal_descriptionBoarFeed" text="Кабани їдять майже все. Їх можна годувати кукурудзою, пшеницею, ячменем, ріпаком, соняшником, соєю, картоплею, сорго та цукровими буряками."/>
+		<text name="fillType_boar" text="Кнур"/>
+		<text name="fillType_boar_landrace" text="Кнур Ландрас"/>
+		<text name="fillType_boar_black_pied" text="Чорно-рябий кнур"/>
+		<text name="fillType_boar_berkshire" text="Кнур Беркшир"/>
+		<text name="animal_descriptionBoarReproduction" text="Кнури, які здорові та старші за 8 місяців, можуть розмножуватись."/>
+		<text name="animal_descriptionBoarFeed" text="Кнури їдять майже все. Їх можна годувати кукурудзою, пшеницею, ячменем, ріпаком, соняшником, соєю, картоплею, сорго та цукровими буряками."/>
 		<text name="animal_descriptionBoarYoung" text="Це пацєтко-самець"/>
 
 		<!-- ВІВЦІ -->
