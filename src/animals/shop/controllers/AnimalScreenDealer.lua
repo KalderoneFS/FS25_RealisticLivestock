@@ -1,5 +1,64 @@
 RL_AnimalScreenDealer = {}
 
+
+function RL_AnimalScreenDealer:initItems()
+
+    AnimalScreenDealer:superClass().initItems(self)
+	
+    self.husbandries = {}
+	self.targetHusbandries = {}
+	self.targetAnimalTypes = {}
+
+    local placeables = g_currentMission.husbandrySystem:getPlaceablesByFarm()
+    local animalSystem = g_currentMission.animalSystem
+
+	for _, placeable in pairs(placeables) do
+
+		local animalTypeIndex = placeable:getAnimalTypeIndex()
+
+		if self.husbandries[animalTypeIndex] == nil then self.husbandries[animalTypeIndex] = {} end
+
+		if placeable:getNumOfAnimals() > 0 then
+
+			table.insert(self.targetAnimalTypes, animalSystem:getTypeByIndex(animalTypeIndex))
+			table.insert(self.targetHusbandries, placeable)
+
+		end
+
+		table.insert(self.husbandries[animalTypeIndex], placeable)
+
+	end
+
+	table.sort(self.targetAnimalTypes, function(a, b) return a.typeIndex < b.typeIndex end)
+	
+    table.sort(self.targetHusbandries, function(a, b) return a:getAnimalTypeIndex() < b:getAnimalTypeIndex() end)
+
+end
+
+AnimalScreenDealer.initItems = Utils.overwrittenFunction(AnimalScreenDealer.initItems, RL_AnimalScreenDealer.initItems)
+
+
+function RL_AnimalScreenDealer:setCurrentHusbandry(_, animalTypeIndex, index, isBuyMode)
+
+    if isBuyMode then
+		local husbandries = self.husbandries[animalTypeIndex]
+		local husbandry
+		if husbandries == nil then
+			husbandry = nil
+		else
+			husbandry = husbandries[index] or nil
+		end
+		self.husbandry = husbandry
+	else
+		self.husbandry = self.targetHusbandries[index]
+	end
+	self:initTargetItems()
+
+end
+
+AnimalScreenDealer.setCurrentHusbandry = Utils.overwrittenFunction(AnimalScreenDealer.setCurrentHusbandry, RL_AnimalScreenDealer.setCurrentHusbandry)
+
+
 function RL_AnimalScreenDealer:initTargetItems(_)
 
     self.targetItems = {}
@@ -21,23 +80,11 @@ AnimalScreenDealer.initTargetItems = Utils.overwrittenFunction(AnimalScreenDeale
 
 
 
-
--- ################
-
--- NOTES:
-
--- All the methods below are required to be overwritten in order to avoid an error that i dont have the time to figure out otherwise :)
--- would theoretically cause mod conflicts as they're overwritten, but the chance of another mod editing anything even remotely to do with this class is extremely slim
-
--- ################
-
-
-
-
 function RL_AnimalScreenDealer:initSourceItems(_)
 
     self.sourceItems = {}
-	self.sourceAnimalTypes = g_currentMission.animalSystem:getTypes()
+	local animalSystem = g_currentMission.animalSystem
+	self.sourceAnimalTypes = animalSystem:getTypes()
 
 	local animalTypes = {}
 
@@ -56,33 +103,27 @@ function RL_AnimalScreenDealer:initSourceItems(_)
 	end
 
 
-	for i = #self.sourceAnimalTypes, 1, -1 do
+	--for i = #self.sourceAnimalTypes, 1, -1 do
 
-		local animalType = self.sourceAnimalTypes[i]
+		--local animalType = self.sourceAnimalTypes[i]
 
-		if not animalTypes[animalType.typeIndex] then table.remove(self.sourceAnimalTypes, i) end
+		--if not animalTypes[animalType.typeIndex] then table.remove(self.sourceAnimalTypes, i) end
 
-	end
+	--end
 
-	for index, animalType in ipairs(self.sourceAnimalTypes) do
+	for index, animalType in pairs(self.sourceAnimalTypes) do
 
-		for _, subTypeIndex in ipairs(animalType.subTypes) do
+		local animals = animalSystem:getSaleAnimalsByTypeIndex(animalType.typeIndex)
+    
+		self.sourceItems[animalType.typeIndex] = {}
 
-			local subType = g_currentMission.animalSystem:getSubTypeByIndex(subTypeIndex)
-
-			for _, visual in ipairs(subType.visuals) do
-				
-				if not visual.store.canBeBought then continue end
-					
-				local item = AnimalItemNew.new(subType.subTypeIndex, visual.minAge)
-
-				if self.sourceItems[index] == nil then self.sourceItems[index] = {} end
-
-				table.insert(self.sourceItems[index], item)
-
-			end
-
+		for _, animal in pairs(animals) do
+			local item = AnimalItemNew.new(animal)
+			table.insert(self.sourceItems[animalType.typeIndex], item)
 		end
+
+		table.sort(self.sourceItems[animalType.typeIndex], RL_AnimalScreenBase.sortSaleAnimals)
+
 	end
 
 end
@@ -90,159 +131,253 @@ end
 AnimalScreenDealer.initSourceItems = Utils.overwrittenFunction(AnimalScreenDealer.initSourceItems, RL_AnimalScreenDealer.initSourceItems)
 
 
-function RL_AnimalScreenDealer:applySource(_, animalTypeIndex, index, numAnimals)
+function RL_AnimalScreenDealer:getSourceMaxNumAnimals(_, _)
 
-	local animal
-	
-	for i, animalType in pairs(self.sourceAnimalTypes) do
+    return 1
 
-		if animalType.typeIndex == animalTypeIndex then
-			animal = self.sourceItems[i][index]
-			break
-		end
+end
 
-	end
+AnimalScreenDealer.getSourceMaxNumAnimals = Utils.overwrittenFunction(AnimalScreenDealer.getSourceMaxNumAnimals, RL_AnimalScreenDealer.getSourceMaxNumAnimals)
 
 
-	local subTypeIndex = animal:getSubTypeIndex()
-	local age = animal:getAge()
-	local transportationFee = -animal:getTranportationFee(numAnimals)
-	local price = -animal:getPrice() * numAnimals
+function RL_AnimalScreenDealer:applySource(_, animalTypeIndex, animalIndex)
 
-	local errorCode = AnimalBuyEvent.validate(self.husbandry, subTypeIndex, age, numAnimals, price, transportationFee, self.husbandry:getOwnerFarmId())
+    if self.husbandry == nil then return false end
 
+    self.sourceAnimals = nil
 
-	if errorCode ~= nil then
-		local error = AnimalScreenDealer.BUY_ERROR_CODE_MAPPING[errorCode]
+    local item = self.sourceItems[animalTypeIndex][animalIndex]
+    local husbandry = self.husbandry
+    local ownerFarmId = husbandry:getOwnerFarmId()
+
+    local price = -item:getPrice()
+	local transportationFee = -item:getTranportationFee(1)
+
+    local errorCode = AnimalBuyEvent.validate(husbandry, item:getSubTypeIndex(), item:getAge(), 1, price, transportationFee, ownerFarmId)
+
+    if errorCode ~= nil then
+		local error = AnimalScreenDealerFarm.BUY_ERROR_CODE_MAPPING[errorCode]
 		self.errorCallback(g_i18n:getText(error.text))
 		return false
 	end
+    
+	--self.actionTypeCallback(AnimalScreenBase.ACTION_TYPE_SOURCE, g_i18n:getText(AnimalScreenDealerFarm.L10N_SYMBOL.BUYING))
 
-	self.actionTypeCallback(AnimalScreenBase.ACTION_TYPE_SOURCE, g_i18n:getText(AnimalScreenDealer.L10N_SYMBOL.BUYING))
-	g_messageCenter:subscribe(AnimalBuyEvent, self.onAnimalBought, self)
+    local animal = item.animal or item.cluster
 
-	g_client:getServerConnection():sendEvent(AnimalBuyEvent.new(self.husbandry, subTypeIndex, age, numAnimals, price, transportationFee))
+    self.sourceAnimals = { animal }
 
+    self.actionTypeCallback(AnimalScreenBase.ACTION_TYPE_SOURCE, g_i18n:getText(AnimalScreenDealerFarm.L10N_SYMBOL.BUYING))
+    g_messageCenter:subscribe(AnimalBuyEvent, self.onAnimalBought, self)
+	g_client:getServerConnection():sendEvent(AnimalBuyEvent.new(husbandry, self.sourceAnimals, price, transportationFee))
 
-	return true
+    --husbandry:getClusterSystem():addCluster(animal)
+    --g_currentMission:addMoney(price + transportationFee, ownerFarmId, MoneyType.NEW_ANIMALS_COST, true, true)
+    
+    --g_currentMission.animalSystem:removeSaleAnimal(animalTypeIndex, animal.birthday.country, animal.farmId, animal.uniqueId)
+    --table.remove(self.sourceItems[animalTypeIndex], animalIndex)
+
+    --self.sourceActionFinished(nil, "Animal bought successfully")
+
+    return true
 
 end
 
 AnimalScreenDealer.applySource = Utils.overwrittenFunction(AnimalScreenDealer.applySource, RL_AnimalScreenDealer.applySource)
 
 
--- for some reason RealisticLivestock_PlaceableHusbandryAnimals.addAnimals is not overwriting the base method?
+function RL_AnimalScreenDealer:onAnimalBought(errorCode)
 
-function RL_AnimalScreenDealer:run(_, connection)
+    if errorCode == AnimalBuyEvent.BUY_SUCCESS and self.sourceAnimals ~= nil then
 
-	if connection:getIsServer() then
-		g_messageCenter:publish(AnimalBuyEvent, self.errorCode)
-		return
-	elseif g_currentMission:getHasPlayerPermission("tradeAnimals", connection) then
+        for _, animal in pairs(self.sourceAnimals) do g_currentMission.animalSystem:removeSaleAnimal(animal.animalTypeIndex, animal.birthday.country, animal.farmId, animal.uniqueId) end
 
-		local userId = g_currentMission.userManager:getUniqueUserIdByConnection(connection)
-		local farm = g_farmManager:getFarmForUniqueUserId(userId)
-		local errorCode = AnimalBuyEvent.validate(self.object, self.subTypeIndex, self.age, self.numAnimals, self.buyPrice, self.feePrice, farm.farmId)
+    end
 
-		if errorCode == nil then
-			
-			if self.object.spec_livestockTrailer ~= nil then
-				RealisticLivestock_LivestockTrailer.addAnimals(self.object, _, self.subTypeIndex, self.numAnimals, self.age)
-				g_currentMission:addMoney(self.buyPrice + self.feePrice, farm.farmId, MoneyType.NEW_ANIMALS_COST, true, true)
-				connection:sendEvent(AnimalBuyEvent.newServerToClient(AnimalBuyEvent.BUY_SUCCESS))
-			elseif self.object.spec_husbandryAnimals ~= nil then
-				RealisticLivestock_PlaceableHusbandryAnimals.addAnimals(self.object, _, self.subTypeIndex, self.numAnimals, self.age)
-				g_currentMission:addMoney(self.buyPrice + self.feePrice, farm.farmId, MoneyType.NEW_ANIMALS_COST, true, true)
-				connection:sendEvent(AnimalBuyEvent.newServerToClient(AnimalBuyEvent.BUY_SUCCESS))
-			end
-
-		else
-			connection:sendEvent(AnimalBuyEvent.newServerToClient(errorCode))
-		end
-
-	else
-		connection:sendEvent(AnimalBuyEvent.newServerToClient(AnimalBuyEvent.BUY_ERROR_NO_PERMISSION))
-		return
-	end
 end
 
-AnimalBuyEvent.run = Utils.overwrittenFunction(AnimalBuyEvent.run, RL_AnimalScreenDealer.run)
+AnimalScreenDealer.onAnimalBought = Utils.prependedFunction(AnimalScreenDealer.onAnimalBought, RL_AnimalScreenDealer.onAnimalBought)
 
 
+function RL_AnimalScreenDealer:applyTarget(_, animalTypeIndex, animalIndex)
 
-function RL_AnimalScreenDealer:getSourcePrice(_, animalTypeIndex, index, numAnimals)
+    if self.husbandry == nil then return false end
 
-	--local animal = self.sourceItems[animalTypeIndex][index]
-	local animal
+    local item = self.targetItems[animalIndex]
+    local husbandry = self.husbandry
+    local ownerFarmId = husbandry:getOwnerFarmId()
 
-	for i, animalType in pairs(self.sourceAnimalTypes) do
+    local price = item:getPrice()
+	local transportationFee = -item:getTranportationFee(1)
 
-		if animalType.typeIndex == animalTypeIndex then
-			animal = self.sourceItems[i][index]
-			break
-		end
+    local errorCode = AnimalSellEvent.validate(husbandry, item:getClusterId(), 1, price, transportationFee)
 
+    if errorCode ~= nil then
+		local error = AnimalScreenDealerFarm.SELL_ERROR_CODE_MAPPING[errorCode]
+		self.errorCallback(g_i18n:getText(error.text))
+		return false
 	end
+    
+	--self.actionTypeCallback(AnimalScreenBase.ACTION_TYPE_SOURCE, g_i18n:getText(AnimalScreenDealerFarm.L10N_SYMBOL.BUYING))
 
-	local transportationFee = animal:getTranportationFee(numAnimals)
-	local price = animal:getPrice() * numAnimals
-	return true, price, transportationFee, price + transportationFee
+    local animal = item.animal or item.cluster
+    husbandry:getClusterSystem():removeCluster(animal.farmId .. " " .. animal.uniqueId .. " " .. animal.birthday.country)
+    g_currentMission:addMoney(price + transportationFee, ownerFarmId, MoneyType.NEW_ANIMALS_COST, true, true)
+    
+    g_currentMission.animalSystem:removeSaleAnimal(animalTypeIndex, animal.birthday.country, animal.farmId, animal.uniqueId)
+    table.remove(self.targetItems, animalIndex)
+
+    self.targetActionFinished(nil, "Animal sold successfully")
+
+    return true
+
+end
+
+AnimalScreenDealer.applyTarget = Utils.overwrittenFunction(AnimalScreenDealer.applyTarget, RL_AnimalScreenDealer.applyTarget)
+
+
+function RL_AnimalScreenDealer:getSourcePrice(_, animalTypeIndex, animalIndex, _)
+
+    if self.sourceItems[animalTypeIndex] ~= nil then
+
+        local item = self.sourceItems[animalTypeIndex][animalIndex]
+
+        if item ~= nil then
+
+	        local price = item:getPrice()
+	        local transportationFee = item:getTranportationFee(1)
+	        return true, price, transportationFee, price + transportationFee
+
+        end
+
+    end
+
+    return false, 0, 0, 0
+
 end
 
 AnimalScreenDealer.getSourcePrice = Utils.overwrittenFunction(AnimalScreenDealer.getSourcePrice, RL_AnimalScreenDealer.getSourcePrice)
 
 
-function RL_AnimalScreenDealer:getApplySourceConfirmationText(_, animalTypeIndex, index, numAnimals)
+function AnimalScreenDealer:applySourceBulk(animalTypeIndex, items)
 
-	local _, _, _, totalPrice = self:getSourcePrice(animalTypeIndex, index, numAnimals)
-	local confirmText = g_i18n:getText(AnimalScreenDealer.L10N_SYMBOL.CONFIRM_BUY)
+    if self.husbandry == nil then return false end
 
-	if numAnimals == 1 then confirmText = g_i18n:getText(AnimalScreenDealer.L10N_SYMBOL.CONFIRM_BUY_SINGULAR) end
+    self.sourceAnimals = {}
 
-	--local animal = self.sourceItems[animalTypeIndex][index]
-	local animal
+    local husbandry = self.husbandry
+    local clusterSystem = husbandry:getClusterSystem()
+    local ownerFarmId = husbandry:getOwnerFarmId()
 
-	for i, animalType in pairs(self.sourceAnimalTypes) do
+    local sourceItems = self.sourceItems[animalTypeIndex]
+    --local indexesToRemove = {}
+    --local indexesToReturn = {}
+    local totalPrice = 0
+    local totalTransportPrice = 0
+    local totalBoughtAnimals = 0
 
-		if animalType.typeIndex == animalTypeIndex then
-			animal = self.sourceItems[i][index]
-			break
-		end
+    for _, item in pairs(items) do
 
-	end
+        if sourceItems[item] ~= nil then
 
+            local sourceItem = sourceItems[item]
+            local animal = sourceItem.animal
+            local price = -sourceItem:getPrice()
+            local transportationFee = -sourceItem:getTranportationFee(1)
 
-	return string.namedFormat(confirmText, "numAnimals", numAnimals, "animalType", animal:getTitle() .. ", " .. animal:getName(), "price", g_i18n:formatMoney(math.abs(totalPrice), 0, true, true))
+            local errorCode = AnimalBuyEvent.validate(husbandry, animal.subTypeIndex, animal.age, 1, price, transportationFee, ownerFarmId)
+
+            if errorCode ~= nil then continue end
+    
+            totalBoughtAnimals = totalBoughtAnimals + 1
+            totalPrice = totalPrice + price
+            totalTransportPrice = totalTransportPrice + transportationFee
+
+            table.insert(self.sourceAnimals, animal)
+            
+            --clusterSystem:addCluster(animal)
+            --g_currentMission.animalSystem:removeSaleAnimal(animalTypeIndex, animal.birthday.country, animal.farmId, animal.uniqueId)
+            --table.insert(indexesToRemove, item)
+            --table.insert(indexesToReturn, item)
+
+        end
+
+    end
+
+    --table.sort(indexesToRemove)
+
+    --for i = #indexesToRemove, 1, -1 do table.remove(sourceItems, indexesToRemove[i]) end
+
+    --self.sourceItems[animalTypeIndex] = sourceItems
+
+    --g_currentMission:addMoney(totalPrice, ownerFarmId, MoneyType.NEW_ANIMALS_COST, true, true)
+
+    --self.sourceBulkActionFinished(nil, string.format(g_i18n:getText("rl_ui_buyBulkResult"), totalBoughtAnimals, g_i18n:formatMoney(math.abs(totalPrice), 2, true, true)), indexesToReturn)
+
+    self.actionTypeCallback(AnimalScreenBase.ACTION_TYPE_SOURCE, g_i18n:getText(AnimalScreenDealerFarm.L10N_SYMBOL.BUYING))
+    g_messageCenter:subscribe(AnimalBuyEvent, self.onAnimalBought, self)
+    g_client:getServerConnection():sendEvent(AnimalBuyEvent.new(husbandry, self.sourceAnimals, totalPrice, totalTransportPrice))
+
 end
 
-AnimalScreenDealer.getApplySourceConfirmationText = Utils.overwrittenFunction(AnimalScreenDealer.getApplySourceConfirmationText, RL_AnimalScreenDealer.getApplySourceConfirmationText)
 
+function AnimalScreenDealer:applyTargetBulk(animalTypeIndex, items)
 
-function RL_AnimalScreenDealer:getSourceItems(animalTypeIndex)
+    if self.husbandry == nil then return false end
 
-	for index, animalType in pairs(self.sourceAnimalTypes) do
+    self.targetAnimals = {}
 
-		if animalType.typeIndex == animalTypeIndex then return self.sourceItems[index] end
+    local husbandry = self.husbandry
+    local clusterSystem = husbandry:getClusterSystem()
+    local ownerFarmId = husbandry:getOwnerFarmId()
 
-	end
+    local targetItems = self.targetItems
+    --local indexesToRemove = {}
+    --local indexesToReturn = {}
+    local totalPrice = 0
+    local totalTransportPrice = 0
+    local totalSoldAnimals = 0
 
-	return {}
+    for _, item in pairs(items) do
+
+        if targetItems[item] ~= nil then
+
+            local targetItem = targetItems[item]
+            local animal = targetItem.animal or targetItem.cluster
+            local price = targetItem:getPrice()
+            local transportationFee = -targetItem:getTranportationFee(1)
+
+            local errorCode = AnimalSellEvent.validate(husbandry, targetItem:getClusterId(), 1, price, transportationFee)
+
+            if errorCode ~= nil then continue end
+    
+            totalSoldAnimals = totalSoldAnimals + 1
+            totalPrice = totalPrice + price
+            totalTransportPrice = totalTransportPrice + transportationFee
+
+            table.insert(self.targetAnimals, animal)
+            
+            --clusterSystem:removeCluster(animal.farmId .. " " .. animal.uniqueId .. " " .. animal.birthday.country)
+
+            --table.insert(indexesToRemove, item)
+            --table.insert(indexesToReturn, item)
+
+        end
+
+    end
+
+    --table.sort(indexesToRemove)
+
+    --for i = #indexesToRemove, 1, -1 do table.remove(targetItems, indexesToRemove[i]) end
+
+    --self.targetItems = targetItems
+
+    --g_currentMission:addMoney(totalPrice, ownerFarmId, MoneyType.SOLD_ANIMALS, true, true)
+
+    --self.targetBulkActionFinished(nil, string.format(g_i18n:getText("rl_ui_sellBulkResult"), totalSoldAnimals, g_i18n:formatMoney(math.abs(totalPrice), 2, true, true)), indexesToReturn)
+
+    self.actionTypeCallback(AnimalScreenBase.ACTION_TYPE_SOURCE, g_i18n:getText(AnimalScreenDealerFarm.L10N_SYMBOL.SELLING))
+    g_messageCenter:subscribe(AnimalSellEvent, self.onAnimalSold, self)
+	g_client:getServerConnection():sendEvent(AnimalSellEvent.new(husbandry, self.targetAnimals, totalPrice, totalTransportPrice))
 
 end
-
-AnimalScreenDealer.getSourceItems = RL_AnimalScreenDealer.getSourceItems
-
-
-function RL_AnimalScreenDealer:getSourceData(_, index)
-
-	local animalType = self.sourceAnimalTypes[index]
-
-	if animalType == nil then return {}, g_i18n:getText("ui_animalTransport") end
-
-	return self.husbandries[animalType.typeIndex] or {}, g_i18n:getText("ui_animalTransport")
-
-	--return self.husbandries[index] or {}, g_i18n:getText("ui_animalTransport")
-
-end
-
-AnimalScreenDealer.getSourceData = Utils.overwrittenFunction(AnimalScreenDealer.getSourceData, RL_AnimalScreenDealer.getSourceData)

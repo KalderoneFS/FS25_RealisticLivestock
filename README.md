@@ -1,8 +1,17 @@
+### Important Notice
+
+Due to several factors (mainly due to a long persistent trend of _difficulty_ with GIANTS Software), development and maintenance of all my mods are hereby ceased. I have removed all my mods from the GIANTS ModHub, and no further development will be supported on any platform.
+
+For certain mods, I will be uploading my private development versions to their respective GitHub projects. Anyone who wishes to continue development or maintenance of any mod is allowed to do so, and upload it to the ModHub, with appropriate credit. Any questions related to continued development can be directed to **arrow_kb** on discord.
+
+
 # FS25_RealisticLivestock
 
-Realistic Livestock mod for FS25.
+[![Github All Releases](https://img.shields.io/github/downloads/Arrow-kb/FS25_RealisticLivestock/total.svg)]()
 
-Please note that due to the complexity of the mod (it is several tens of thousands of lines of code), it does not currently support MP but this is planned
+[Requires FS25_FontLibrary](https://github.com/Arrow-kb/FS25_FontLibrary)
+
+Realistic Livestock mod for FS25.
 
 # Features:
 <ins>**Male Animals**</ins>
@@ -68,6 +77,6 @@ Please note that due to the complexity of the mod (it is several tens of thousan
 ![screenshot3](https://github.com/user-attachments/assets/3731d7e0-6bae-411d-957f-5b4496a1607f)
 ![screenshot5](https://github.com/user-attachments/assets/cee43caf-9401-421d-8ada-745d4fa41c7a)
 
-# Planned Features
-- Illnesses
-- Genetic diseases
+# In Progress
+- Diseases
+- Message log tab for husbandries

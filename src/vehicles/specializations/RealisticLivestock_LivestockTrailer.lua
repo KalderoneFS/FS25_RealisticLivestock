@@ -1,11 +1,9 @@
 RealisticLivestock_LivestockTrailer = {}
 
-function RealisticLivestock_LivestockTrailer:addAnimals(superFunc, subTypeIndex, numAnimals, age)
+function RealisticLivestock_LivestockTrailer:addAnimals(superFunc, animals)
 
-    for i=1, numAnimals do
+    for _, animal in pairs(animals) do
 
-        local subType = g_currentMission.animalSystem:getSubTypeByIndex(subTypeIndex)
-        local animal = Animal.new(age, 100, 0, subType.gender, subTypeIndex, 0, false, false, false, self.spec_livestockTrailer.clusterSystem)
         self:addCluster(animal)
 
     end
@@ -48,44 +46,7 @@ LivestockTrailer.onLoadFinished = Utils.appendedFunction(LivestockTrailer.onLoad
 
 
 
-
-function RealisticLivestock_LivestockTrailer:run(_, connection)
-
-    if connection:getIsServer() then
-        g_messageCenter:publish(AnimalMoveEvent, self.errorCode)
-    else
-        local userId = g_currentMission.userManager:getUniqueUserIdByConnection(connection)
-        local farmId = g_farmManager:getFarmForUniqueUserId(userId).farmId
-        local validate = AnimalMoveEvent.validate(self.sourceObject, self.targetObject, self.clusterId, self.numAnimals, farmId)
-
-        if validate == nil then
-
-            local animal = self.sourceObject:getClusterById(self.clusterId)
-            self.targetObject:getClusterSystem():addCluster(animal)
-            self.sourceObject:getClusterSystem():removeCluster(self.clusterId)
-            local sourceClusterSystem = self.sourceObject:getClusterSystem()
-            local targetClusterSystem = self.targetObject:getClusterSystem()
-
-            if sourceClusterSystem ~= nil then sourceClusterSystem:updateClusters() end
-            if targetClusterSystem ~= nil then
-                animal:setClusterSystem(targetClusterSystem)
-                targetClusterSystem:updateClusters()
-            end
-
-            connection:sendEvent(AnimalMoveEvent.newServerToClient(AnimalMoveEvent.MOVE_SUCCESS))
-
-        else
-            connection:sendEvent(AnimalMoveEvent.newServerToClient(validate))
-        end
-    end
-
-end
-
-AnimalMoveEvent.run = Utils.overwrittenFunction(AnimalMoveEvent.run, RealisticLivestock_LivestockTrailer.run)
-
-
-
-function RealisticLivestock_PlaceableHusbandryAnimals:dayChanged(superFunc)
+function RealisticLivestock_LivestockTrailer:dayChanged(superFunc)
 
     superFunc(self)
 

@@ -1,8 +1,6 @@
 RealisticLivestock_AnimalClusterSystem = {}
 local AnimalClusterSystem_mt = Class(AnimalClusterSystem)
 
--- TESTING FILE
-
 function RealisticLivestock_AnimalClusterSystem.new(superFunc, isServer, owner, customMt)
 
     local self = setmetatable({}, customMt or AnimalClusterSystem_mt)
@@ -115,6 +113,82 @@ end
 
 AnimalClusterSystem.saveToXMLFile = Utils.overwrittenFunction(AnimalClusterSystem.saveToXMLFile, RealisticLivestock_AnimalClusterSystem.saveToXMLFile)
 
+
+function RealisticLivestock_AnimalClusterSystem:readStream(_, streamId, connection)
+
+    local numAnimals = streamReadUInt16(streamId)
+
+    for i = 1, numAnimals do
+
+        local animalTypeIndex = streamReadUInt8(streamId)
+        local country = streamReadUInt8(streamId)
+        local uniqueId = streamReadString(streamId)
+        local farmId = streamReadString(streamId)
+
+        local existingAnimal = false
+
+        for _, animal in pairs(self.animals) do
+
+            if animal.birthday.country == country and animal.animalTypeIndex == animalTypeIndex and animal.uniqueId == uniqueId and animal.farmId == farmId then
+                animal:readStream(streamId, connection)
+                animal.foundThisUpdate = true
+                existingAnimal = true
+                break
+            end
+
+        end
+
+        if not existingAnimal then
+
+            local animal = Animal.new()
+            animal:readStream(streamId, connection)
+            animal.foundThisUpdate = true
+            self:addCluster(animal)
+
+        end
+
+    end
+
+    for i = #self.animals, 1, -1 do
+
+        local animal = self.animals[i]
+
+        if not animal.foundThisUpdate then
+            self:removeCluster(i)
+        else
+            animal.foundThisUpdate = false
+        end
+
+    end
+
+    self:updateIdMapping()
+	g_messageCenter:publish(AnimalClusterUpdateEvent, self.owner, self.animals)
+
+end
+
+AnimalClusterSystem.readStream = Utils.overwrittenFunction(AnimalClusterSystem.readStream, RealisticLivestock_AnimalClusterSystem.readStream)
+
+
+function RealisticLivestock_AnimalClusterSystem:writeStream(_, streamId, connection)
+
+    streamWriteUInt16(streamId, #self.animals)
+
+    for _, animal in pairs(self.animals) do
+
+        streamWriteUInt8(streamId, animal.animalTypeIndex)
+        streamWriteUInt8(streamId, animal.birthday.country)
+        streamWriteString(streamId, animal.uniqueId)
+        streamWriteString(streamId, animal.farmId)
+
+        local success = animal:writeStream(streamId, connection)
+
+    end
+
+end
+
+AnimalClusterSystem.writeStream = Utils.overwrittenFunction(AnimalClusterSystem.writeStream, RealisticLivestock_AnimalClusterSystem.writeStream)
+
+
 function RealisticLivestock_AnimalClusterSystem:getClusters(superFunc)
     return self.animals or {}
 end
@@ -133,8 +207,17 @@ function RealisticLivestock_AnimalClusterSystem:getClusterById(superFunc, id)
 
     if id == nil or self.animals == nil then return end
 
+    if string.contains(id, "-") then
+
+        for _, animal in pairs(self.animals) do
+            if animal.id == id then return animal end
+        end
+
+    end
+
+
     for _, animal in pairs(self.animals) do
-        if animal.farmId .. " " .. animal.uniqueId == id then return animal end
+        if animal.farmId .. " " .. animal.uniqueId .. " " .. animal.birthday.country == id then return animal end
     end
 
     if index == nil or self.animals == nil or self.animals[index] == nil then return nil end
@@ -172,20 +255,22 @@ function RealisticLivestock_AnimalClusterSystem:removeCluster(_, animalIndex)
             local husbandry = tonumber(string.sub(animal.idFull, 1, sep - 1))
             local animalId = tonumber(string.sub(animal.idFull, sep + 1))
 
-            if husbandry == 0 or animalId == 0 then return end
+            if husbandry ~= 0 and animalId ~= 0 then
 
-            removeHusbandryAnimal(husbandry, animalId)
+                removeHusbandryAnimal(husbandry, animalId)
 
-            local clusterHusbandry = spec.clusterHusbandry
-            clusterHusbandry.husbandryIdsToVisualAnimalCount[husbandry] = math.max(clusterHusbandry.husbandryIdsToVisualAnimalCount[husbandry] - 1, 0)
-            clusterHusbandry.visualAnimalCount = math.max(clusterHusbandry.visualAnimalCount - 1, 0)
+                local clusterHusbandry = spec.clusterHusbandry
+                clusterHusbandry.husbandryIdsToVisualAnimalCount[husbandry] = math.max(clusterHusbandry.husbandryIdsToVisualAnimalCount[husbandry] - 1, 0)
+                clusterHusbandry.visualAnimalCount = math.max(clusterHusbandry.visualAnimalCount - 1, 0)
 
-            for husbandryIndex, animalIds in pairs(clusterHusbandry.animalIdToCluster) do
+                for husbandryIndex, animalIds in pairs(clusterHusbandry.animalIdToCluster) do
 
-                if clusterHusbandry.husbandryIds[husbandryIndex] == husbandry then
+                    if clusterHusbandry.husbandryIds[husbandryIndex] == husbandry then
 
-                    table.remove(animalIds, animalId)
-                    break
+                        animalIds[animalId] = nil
+                        break
+
+                    end
 
                 end
 
@@ -197,7 +282,7 @@ function RealisticLivestock_AnimalClusterSystem:removeCluster(_, animalIndex)
         animal:setClusterSystem(nil)
     else
         for i, animal in pairs(self.animals) do
-            if animal.farmId .. " " .. animal.uniqueId == animalIndex then
+            if animal.farmId .. " " .. animal.uniqueId .. " " .. animal.birthday.country == animalIndex then
 
                 local spec = self.owner.spec_husbandryAnimals
 
@@ -207,13 +292,15 @@ function RealisticLivestock_AnimalClusterSystem:removeCluster(_, animalIndex)
                     local husbandry = tonumber(string.sub(animal.idFull, 1, sep - 1))
                     local animalId = tonumber(string.sub(animal.idFull, sep + 1))
 
-                    if husbandry == 0 or animalId == 0 then return end
+                    if husbandry ~= 0 and animalId ~= 0 then
 
-                    removeHusbandryAnimal(husbandry, animalId)
+                        removeHusbandryAnimal(husbandry, animalId)
 
-                    local clusterHusbandry = spec.clusterHusbandry
-                    clusterHusbandry.husbandryIdsToVisualAnimalCount[husbandry] = math.max(clusterHusbandry.husbandryIdsToVisualAnimalCount[husbandry] - 1, 0)
-                    clusterHusbandry.visualAnimalCount = math.max(clusterHusbandry.visualAnimalCount - 1, 0)
+                        local clusterHusbandry = spec.clusterHusbandry
+                        clusterHusbandry.husbandryIdsToVisualAnimalCount[husbandry] = math.max(clusterHusbandry.husbandryIdsToVisualAnimalCount[husbandry] - 1, 0)
+                        clusterHusbandry.visualAnimalCount = math.max(clusterHusbandry.visualAnimalCount - 1, 0)
+
+                    end
 
                 end
 
@@ -252,7 +339,7 @@ function RealisticLivestock_AnimalClusterSystem:updateClusters(superFunc)
             for i=1, animalsToAdd.numAnimals do
                 local genetics = animalsToAdd.genetics or nil
                 local impregnatedBy = animalsToAdd.impregnatedBy or nil
-                local animal = Animal.new(animalsToAdd.age, animalsToAdd.health, animalsToAdd.monthsSinceLastBirth or 0, subType.gender, animalsToAdd.subTypeIndex, animalsToAdd.reproduction or 0, animalsToAdd.isParent or false, animalsToAdd.isPregnant or false, animalsToAdd.isLactating or false, self, animalsToAdd.uniqueId, animalsToAdd.motherId, animalsToAdd.fatherId, nil, animalsToAdd.name, animalsToAdd.dirt, animalsToAdd.fitness, animalsToAdd.riding, animalsToAdd.farmId, animalsToAdd.weight, genetics, impregnatedBy, animalsToAdd.variation, animalsToAdd.children)
+                local animal = Animal.new(animalsToAdd.age, animalsToAdd.health, animalsToAdd.monthsSinceLastBirth or 0, subType.gender, animalsToAdd.subTypeIndex, animalsToAdd.reproduction or 0, animalsToAdd.isParent or false, animalsToAdd.isPregnant or false, animalsToAdd.isLactating or false, self, animalsToAdd.uniqueId, animalsToAdd.motherId, animalsToAdd.fatherId, nil, animalsToAdd.name, animalsToAdd.dirt, animalsToAdd.fitness, animalsToAdd.riding, animalsToAdd.farmId, animalsToAdd.weight, genetics, impregnatedBy, animalsToAdd.variation, animalsToAdd.children, animalsToAdd.monitor)
                 self:addCluster(animal)
                 isDirty = true
             end
@@ -271,7 +358,7 @@ function RealisticLivestock_AnimalClusterSystem:updateClusters(superFunc)
                 for i=1, animalToAdd.numAnimals do
                     local genetics = animalToAdd.genetics or nil
                     local impregnatedBy = animalToAdd.impregnatedBy or nil
-                    local animal = Animal.new(animalToAdd.age, animalToAdd.health, animalToAdd.monthsSinceLastBirth or 0, subType.gender, animalToAdd.subTypeIndex, animalToAdd.reproduction or 0, animalToAdd.isParent or false, animalToAdd.isPregnant or false, animalToAdd.isLactating or false, self, animalToAdd.uniqueId, animalToAdd.motherId, animalToAdd.fatherId, nil, animalToAdd.name, animalToAdd.dirt, animalToAdd.fitness, animalToAdd.riding, animalToAdd.farmId, animalToAdd.weight, genetics, impregnatedBy, animalToAdd.variation, animalToAdd.children)
+                    local animal = Animal.new(animalToAdd.age, animalToAdd.health, animalToAdd.monthsSinceLastBirth or 0, subType.gender, animalToAdd.subTypeIndex, animalToAdd.reproduction or 0, animalToAdd.isParent or false, animalToAdd.isPregnant or false, animalToAdd.isLactating or false, self, animalToAdd.uniqueId, animalToAdd.motherId, animalToAdd.fatherId, nil, animalToAdd.name, animalToAdd.dirt, animalToAdd.fitness, animalToAdd.riding, animalToAdd.farmId, animalToAdd.weight, genetics, impregnatedBy, animalToAdd.variation, animalToAdd.children, animalToAdd.monitor)
                     self:addCluster(animal)
                     isDirty = true
                 end
@@ -328,7 +415,7 @@ function RealisticLivestock_AnimalClusterSystem:updateIdMapping(superFunc)
         
     if self.owner.updatedClusters ~= nil then self.owner:updatedClusters(self.owner, self.animals) end
 
-    g_server:broadcastEvent(AnimalClusterUpdateEvent.new(self.owner, self.animals))
+    if g_server ~= nil then g_server:broadcastEvent(AnimalClusterUpdateEvent.new(self.owner, self.animals)) end
     g_messageCenter:publish(AnimalClusterUpdateEvent, self.owner, self.animals)
     
 end

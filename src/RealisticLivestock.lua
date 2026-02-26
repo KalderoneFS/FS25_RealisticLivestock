@@ -4,6 +4,42 @@ local modDirectory = g_currentModDirectory
 local hasLoaded = false
 
 
+RealisticLivestock.FONTS = g_fontManager:loadFontsFromXMLFile(g_currentModDirectory .. "fonts/fonts.xml", g_currentModDirectory)
+
+
+RealisticLivestock.MARKS = {
+    ["AI_MANAGER_SELL"] = {
+        ["key"] = "AI_MANAGER_SELL",
+        ["active"] = false,
+        ["priority"] = 3,
+        ["text"] = "aiManager_sell"
+    },
+    ["AI_MANAGER_CASTRATE"] = {
+        ["key"] = "AI_MANAGER_CASTRATE",
+        ["active"] = false,
+        ["priority"] = 5,
+        ["text"] = "aiManager_castrate"
+    },
+    ["AI_MANAGER_DISEASE"] = {
+        ["key"] = "AI_MANAGER_DISEASE",
+        ["active"] = false,
+        ["priority"] = 2,
+        ["text"] = "aiManager_disease"
+    },
+    ["AI_MANAGER_INSEMINATE"] = {
+        ["key"] = "AI_MANAGER_INSEMINATE",
+        ["active"] = false,
+        ["priority"] = 4,
+        ["text"] = "aiManager_ai"
+    },
+    ["PLAYER"] = {
+        ["key"] = "PLAYER",
+        ["active"] = false,
+        ["priority"] = 1,
+        ["text"] = "player"
+    }
+}
+
 
 RealisticLivestock.MAP_TO_AREA_CODE = {
     ["Riverbend Springs"] = 2,
@@ -28,7 +64,7 @@ RealisticLivestock.MAP_TO_AREA_CODE = {
     ["Frankenmuth Farming Map"] = 2,
     ["North Frisian 25"] = 6,
     ["Alma, Missouri"] = 2,
-    ["Michigan Map"] = 2,
+    ["Michigan Map"] = 2
 }
 
 RealisticLivestock.AREA_CODES = {
@@ -70,11 +106,31 @@ RealisticLivestock.AREA_CODES = {
     },
     [10] = {
         ["code"] = "CZ",
-        ["country"] = "Czechoslovakia"
+        ["country"] = "Czech Republic"
     },
     [11] = {
         ["code"] = "RU",
         ["country"] = "Russia"
+    },
+    [12] = {
+        ["code"] = "SW",
+        ["country"] = "Sweden"
+    },
+    [13] = {
+        ["code"] = "NO",
+        ["country"] = "Norway"
+    },
+    [14] = {
+        ["code"] = "FI",
+        ["country"] = "Finland"
+    },
+    [15] = {
+        ["code"] = "JP",
+        ["country"] = "Japan"
+    },
+    [16] = {
+        ["code"] = "SP",
+        ["country"] = "Spain"
     }
 }
 
@@ -121,7 +177,7 @@ RealisticLivestock.ALPHABET = {
 }
 
 
-RealisticLivestock.NUM_CHARACTERS = 38
+RealisticLivestock.NUM_CHARACTERS = 64
 
 
 RealisticLivestock.DAYS_PER_MONTH = {
@@ -147,9 +203,33 @@ RealisticLivestock.START_YEAR = {
 
 
 
+
+table.insert(FinanceStats.statNames, "herdsmanWages")
+FinanceStats.statNameToIndex["herdsmanWages"] = #FinanceStats.statNames
+table.insert(FinanceStats.statNames, "semenPurchase")
+FinanceStats.statNameToIndex["semenPurchase"] = #FinanceStats.statNames
+table.insert(FinanceStats.statNames, "medicine")
+FinanceStats.statNameToIndex["medicine"] = #FinanceStats.statNames
+
+
+
 function RealisticLivestock.loadMap()
     
     RealisticLivestock.mapAreaCode = RealisticLivestock.MAP_TO_AREA_CODE[g_currentMission.missionInfo.mapTitle] or 1
+	g_overlayManager:addTextureConfigFile(modDirectory .. "gui/helpicons.xml", "rlHelpIcons")
+    g_overlayManager:addTextureConfigFile(modDirectory .. "gui/icons.xml", "realistic_livestock")
+    g_overlayManager:addTextureConfigFile(modDirectory .. "gui/fileTypeIcons.xml", "fileTypeIcons")
+    g_rlConsoleCommandManager = RLConsoleCommandManager.new()
+    g_diseaseManager = DiseaseManager.new()
+
+    MoneyType.HERDSMAN_WAGES = MoneyType.register("herdsmanWages", "rl_ui_herdsmanWages")
+    MoneyType.LAST_ID = MoneyType.LAST_ID + 1
+
+    MoneyType.SEMEN_PURCHASE = MoneyType.register("semenPurchase", "rl_ui_semenPurchase")
+    MoneyType.LAST_ID = MoneyType.LAST_ID + 1
+
+    MoneyType.MEDICINE = MoneyType.register("medicine", "rl_ui_medicine")
+    MoneyType.LAST_ID = MoneyType.LAST_ID + 1
 
 end
 
@@ -924,7 +1004,7 @@ function RealisticLivestock.hasMaleAnimalInPen(spec, subT, female)
     if spec == nil then return false end
 
     local clusterSystem = spec.clusterSystem or spec
-    if clusterSystem == nil or clusterSystem.getAnimals == nil or clusterSystem:getAnimals() == nil then return false end
+    if clusterSystem == nil or clusterSystem.getAnimals == nil or clusterSystem:getAnimals() == nil or female.genetics.fertility <= 0 then return false end
 
     local animals = clusterSystem:getAnimals()
     local animalSystem = g_currentMission.animalSystem
@@ -932,10 +1012,13 @@ function RealisticLivestock.hasMaleAnimalInPen(spec, subT, female)
     local fatherId = (female ~= nil and female.fatherId ~= "-1") and female.fatherId or "-2"
 
     for _, animal in pairs(animals) do
+
+        if animal.isCastrated or animal.genetics.fertility <= 0 then continue end
+
         local s = animalSystem:getSubTypeByIndex(animal:getSubTypeIndex())
         if s.reproductionMinAgeMonth == nil or s.reproductionMinAgeMonth > animal.age then continue end
 
-        if animal.farmId .. " " .. animal.uniqueId == fatherId then continue end
+        if animal:getIdentifiers() == fatherId then continue end
 
         if subT == "COW_WATERBUFFALO" then
             if s.name == "BULL_WATERBUFFALO" and animal.age < 132 then return true end
@@ -1057,7 +1140,7 @@ function RealisticLivestock:updateInfo(superFunc, infoTable)
     end
 end
 
-PlaceableHusbandryAnimals.updateInfo = Utils.appendedFunction(PlaceableHusbandryAnimals.updateInfo, RealisticLivestock.updateInfo)
+--PlaceableHusbandryAnimals.updateInfo = Utils.appendedFunction(PlaceableHusbandryAnimals.updateInfo, RealisticLivestock.updateInfo)
 
 
 function RealisticLivestock.addAnimals(self, superFunc, subTypeIndex, numAnimals, age)
@@ -1093,7 +1176,7 @@ function RealisticLivestock.addAnimals(self, superFunc, subTypeIndex, numAnimals
     end
 end
 
-PlaceableHusbandryAnimals.addAnimals = Utils.overwrittenFunction(PlaceableHusbandryAnimals.addAnimals, RealisticLivestock.addAnimals)
+--PlaceableHusbandryAnimals.addAnimals = Utils.overwrittenFunction(PlaceableHusbandryAnimals.addAnimals, RealisticLivestock.addAnimals)
 
 
 -- Saving and Loading
